@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingwo.mall.dao.OmsOrderDao">
+    <resultMap id="orderDetailResultMap" type="com.lingwo.mall.dto.OmsOrderDetail" extends="com.lingwo.mall.mapper.OmsOrderMapper.BaseResultMap">
+        <collection property="orderItemList" resultMap="com.lingwo.mall.mapper.OmsOrderItemMapper.BaseResultMap" columnPrefix="item_"/>
+        <collection property="historyList" resultMap="com.lingwo.mall.mapper.OmsOrderOperateHistoryMapper.BaseResultMap" columnPrefix="history_"/>
+    </resultMap>
+
+    <select id="getList" resultMap="com.lingwo.mall.mapper.OmsOrderMapper.BaseResultMap">
+        SELECT *
+        FROM
+        oms_order
+        WHERE
+        delete_status = 0
+        <if test="queryParam.orderSn!=null and queryParam.orderSn!=''">
+            AND order_sn = #{queryParam.orderSn}
+        </if>
+        <if test="queryParam.status!=null">
+            AND `status` = #{queryParam.status}
+        </if>
+        <if test="queryParam.sourceType!=null">
+            AND source_type = #{queryParam.sourceType}
+        </if>
+        <if test="queryParam.orderType!=null">
+            AND order_type = #{queryParam.orderType}
+        </if>
+        /*获取该创建时间之后的订单*/
+        <if test="queryParam.createTime!=null and queryParam.createTime!=''">
+            AND create_time LIKE concat(#{queryParam.createTime},"%")
+        </if>
+        /*根据收货人姓名或手机号模糊查询*/
+        <if test="queryParam.receiverKeyword!=null and queryParam.receiverKeyword!=''">
+            AND (
+            receiver_name LIKE concat("%",#{queryParam.receiverKeyword},"%")
+            OR receiver_phone LIKE concat("%",#{queryParam.receiverKeyword},"%")
+            )
+        </if>
+    </select>
+
+    <update id="delivery">
+        UPDATE oms_order
+        SET
+        delivery_sn = CASE id
+        <foreach collection="list" item="item">
+            WHEN #{item.orderId} THEN #{item.deliverySn}
+        </foreach>
+        END,
+        delivery_company = CASE id
+        <foreach collection="list" item="item">
+            WHEN #{item.orderId} THEN #{item.deliveryCompany}
+        </foreach>
+        END,
+        /*根据订单号将发货时间改为当前时间*/
+        delivery_time = CASE id
+        <foreach collection="list" item="item">
+            WHEN #{item.orderId} THEN now()
+        </foreach>
+        END,
+        /*根据订单号将订单状态修改为：已发货*/
+        `status` = CASE id
+        <foreach collection="list" item="item">
+            WHEN #{item.orderId} THEN 2
+        </foreach>
+        END
+        WHERE
+        /*根据订单号修改*/
+        id IN
+        <foreach collection="list" item="item" separator="," open="(" close=")">
+            #{item.orderId}
+        </foreach>
+        /*修改条件为：订单状态为：未发货*/
+        AND `status` = 1
+    </update>
+
+    <!--根据订单id获取订单信息、订单商品列表和订单操作记录列表-->
+    <select id="getDetail" resultMap="orderDetailResultMap">
+        /*获取订单信息*/
+        SELECT o.*,
+        /*获取订单商品信息列表*/
+            oi.id item_id,
+            oi.product_id item_product_id,
+            oi.product_sn item_product_sn,
+            oi.product_pic item_product_pic,
+            oi.product_name item_product_name,
+            oi.product_brand item_product_brand,
+            oi.product_price item_product_price,
+            oi.product_quantity item_product_quantity,
+            oi.product_attr item_product_attr,
+            /*获取订单操作记录列表*/
+            oh.id history_id,
+            oh.operate_man history_operate_man,
+            oh.create_time history_create_time,
+            oh.order_status history_order_status,
+            oh.note history_note
+        FROM
+            oms_order o
+            LEFT JOIN oms_order_item oi ON o.id = oi.order_id
+            LEFT JOIN oms_order_operate_history oh ON o.id = oh.order_id
+        WHERE
+            o.id = #{id}
+            /* 根据订单号分组并且升序排序 */
+        ORDER BY oi.id ASC,oh.create_time DESC
+    </select>
+
+</mapper>
